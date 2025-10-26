@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neurolens - Emotion Detection</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    /* keep all your original styles */
+    * {margin: 0; padding: 0; box-sizing: border-box;}
+    body {
+      font-family: "Poppins", sans-serif;
+      background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+      background-size: 400% 400%;
+      animation: gradientBG 15s ease infinite;
+      color: #fff;
+      text-align: center;
+      overflow-x: hidden;
+    }
+    @keyframes gradientBG {0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+    header {font-size: 4rem;font-weight: 800;color: #ffffff;padding: 1rem;margin-top: 25px;letter-spacing: 6px;text-shadow: 0px 0px 20px #00ffe7, 0px 0px 40px #7d4fff;animation: glowHeader 4s infinite alternate;}
+    @keyframes glowHeader {from { text-shadow: 0px 0px 15px #ff00cc, 0px 0px 30px #3333ff;}to { text-shadow: 0px 0px 35px #00ffe7, 0px 0px 60px #ff00ff;}}
+    p.subtitle {font-size: 1.4rem;margin: 10px 0 30px 0;opacity: 0.85;letter-spacing: 1px;}
+    .card {background: rgba(255, 255, 255, 0.08);border-radius: 22px;padding: 25px;margin: 25px auto;width: 85%;max-width: 950px;backdrop-filter: blur(25px);box-shadow: 0px 6px 25px rgba(0,0,0,0.5);transition: transform 0.3s ease, box-shadow 0.3s ease;}
+    .card:hover {transform: translateY(-6px);box-shadow: 0px 10px 30px rgba(0,0,0,0.7);}
+    h2 {margin-bottom: 15px;font-size: 2rem;color: #ffeb3b;letter-spacing: 1px;}
+    video, canvas, audio {margin: 15px;border: 3px solid rgba(255,255,255,0.25);border-radius: 18px;box-shadow: 0px 0px 25px rgba(255,255,255,0.2);}
+    button {background: linear-gradient(45deg, #00dbde, #fc00ff);border: none;padding: 14px 26px;color: white;font-weight: bold;text-transform: uppercase;border-radius: 12px;font-size: 1rem;cursor: pointer;transition: all 0.3s ease-in-out;box-shadow: 0px 5px 20px rgba(0,0,0,0.3);}
+    button:hover {transform: scale(1.07);box-shadow: 0px 8px 30px rgba(0,0,0,0.5);letter-spacing: 1px;}
+    #legend {margin-top: 25px;background: rgba(0, 0, 0, 0.65);border-radius: 18px;padding: 25px;width: max-content;margin-left: auto;margin-right: auto;text-align: left;box-shadow: 0px 8px 30px rgba(255,255,255,0.1);transition: transform 0.3s ease;}
+    #legend:hover {transform: scale(1.03);}
+    #legend h3 {margin-top: 0;font-size: 22px;color: #00ffe7;text-align: center;margin-bottom: 10px;}
+    #legend ul {list-style: none;padding: 0;}
+    #legend li {margin: 7px 0;font-size: 1rem;color: #efefef;}
+    footer {margin-top: 40px;font-size: 0.9rem;opacity: 0.7;}
+    #finalResult {margin-top: 15px;font-size: 1.3rem;font-weight: bold;color: #00ffe7;}
+    #voiceTimer {margin-top: 10px;font-size: 1.2rem;color: #ffeb3b;}
+  </style>
+</head>
+<body>
+
+  <header>NEUROLENS</header>
+  
+
+  <!-- Camera Section -->
+  <div class="card">
+    <h2>Live Camera Feed</h2>
+    <video id="video" width="480" height="360" autoplay playsinline muted></video>
+    <canvas id="canvas" width="480" height="360" style="display:none;"></canvas><br>
+    <button id="startCameraBtn">Start Camera</button>
+    <button id="stopCameraBtn">Stop Camera</button>
+  </div>
+
+  <!-- Voice Section -->
+  <div class="card">
+    <h2>Voice Recorder</h2>
+    <button id="startVoiceBtn">Start Voice</button>
+    <button id="stopVoiceBtn">Stop Voice</button>
+    <div id="voiceTimer">Recording Time: 0s</div>
+    <br>
+    <audio id="audioPlayback" controls></audio>
+  </div>
+
+  <!-- Chart Section -->
+  <div class="card" id="chart-container">
+    <h2>📊 Emotion Graph</h2>
+    <canvas id="emotionChart" width="600" height="300"></canvas>
+    <p id="finalResult"></p>
+  </div>
+
+  <!-- Legend Section -->
+  <div id="legend">
+    <h3>Emotion Index</h3>
+    <ul>
+      <li>1 = Angry 😠</li>
+      <li>2 = Disgust 🤢</li>
+      <li>3 = Fear 😨</li>
+      <li>4 = Happy 😀</li>
+      <li>5 = Sad 😢</li>
+      <li>6 = Surprised 😲</li>
+      <li>7 = Neutral 😐</li>
+      <li>8 = Euphoric 🤩</li>
+      <li>9 = Joyful 😍</li>
+    </ul>
+  </div>
+
+  <footer>Powered by Neurolens © 2025</footer>
+
+  <script>
+    let video = document.getElementById("video");
+    let canvas = document.getElementById("canvas");
+    let ctx = canvas.getContext("2d");
+
+    let labels = [];
+    let imageData = [];
+    let voiceData = [];
+
+    let cameraOn = false;
+    let voiceOn = false;
+    let graphRunning = false;
+    let voiceTimerInterval = null;
+    let seconds = 0;
+
+    // Chart setup
+    const ctxChart = document.getElementById("emotionChart").getContext("2d");
+    const chart = new Chart(ctxChart, {
+      type: "line",
+      data: { labels: labels, datasets: [
+        {label:"Image Emotion",data:imageData,borderColor:"#00ffe7",backgroundColor:"rgba(0,255,231,0.15)",fill:true,tension:0.35,pointRadius:5,pointBackgroundColor:"#00ffe7"},
+        {label:"Voice Emotion",data:voiceData,borderColor:"#ff00ff",backgroundColor:"rgba(255,0,255,0.15)",fill:true,tension:0.35,pointRadius:5,pointBackgroundColor:"#ff00ff"}
+      ]},
+      options: {scales:{y:{beginAtZero:true,title:{display:true,text:"Emotion Index",color:"#fff"},ticks:{stepSize:1,color:"#fff"},grid:{color:"rgba(255,255,255,0.2)"}},
+                       x:{title:{display:true,text:"Time",color:"#fff"},ticks:{color:"#fff"},grid:{color:"rgba(255,255,255,0.15)"}}}}
+    });
+
+    const emotionMap = { angry:1, disgust:2, fear:3, happy:4, sad:5, surprised:6, neutral:7, euphoric:8, joyfully:9 };
+
+    function addData(type, emotion) {
+      let now = new Date().toLocaleTimeString();
+      if (labels.length > 20) {labels.shift(); imageData.shift(); voiceData.shift();}
+      labels.push(now);
+      let value = emotionMap[emotion?.toLowerCase()] || 0;
+      if (type === "Image") { imageData.push(value); voiceData.push(null); }
+      else if (type === "Voice") { voiceData.push(value); imageData.push(null); }
+      chart.update();
+    }
+
+    function startGraph() {
+      if (graphRunning) return;
+      graphRunning = true;
+      const loop = () => {
+        if (!graphRunning) return;
+        addData("Image", "happy");  // simulate
+        addData("Voice", "sad");    // simulate
+        setTimeout(loop, 2000);
+      };
+      loop();
+    }
+
+    function stopGraph() {
+      graphRunning = false;
+      showFinalResult();
+    }
+
+    function showFinalResult() {
+      let lastImage = imageData[imageData.length-1];
+      let lastVoice = voiceData[voiceData.length-1];
+      let finalEmotion = lastVoice || lastImage || 0;
+      let emotionName = Object.keys(emotionMap).find(key => emotionMap[key] === finalEmotion);
+      document.getElementById("finalResult").innerText = "🎯 Final Detected Emotion: " + (emotionName ? emotionName.toUpperCase() : "Unknown");
+    }
+
+    // Camera controls
+    document.getElementById("startCameraBtn").onclick = async () => {
+      let stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+      cameraOn = true;
+      if (cameraOn && voiceOn) startGraph();
+    };
+    document.getElementById("stopCameraBtn").onclick = () => {
+      if (video.srcObject) video.srcObject.getTracks().forEach(t=>t.stop());
+      cameraOn = false;
+      checkAutoScroll();
+      stopGraph();
+    };
+
+    // Voice controls
+    document.getElementById("startVoiceBtn").onclick = async () => {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+      voiceOn = true;
+      startVoiceTimer();
+      if (cameraOn && voiceOn) startGraph();
+    };
+    document.getElementById("stopVoiceBtn").onclick = () => {
+      voiceOn = false;
+      stopVoiceTimer();
+      checkAutoScroll();
+      stopGraph();
+    };
+
+    // Timer for voice recording
+    function startVoiceTimer() {
+      seconds = 0;
+      document.getElementById("voiceTimer").innerText = "Recording Time: 0s";
+      voiceTimerInterval = setInterval(() => {
+        seconds++;
+        document.getElementById("voiceTimer").innerText = "Recording Time: " + seconds + "s";
+      }, 1000);
+    }
+    function stopVoiceTimer() {
+      clearInterval(voiceTimerInterval);
+    }
+
+    // Auto scroll to graph
+    function checkAutoScroll() {
+      if (!cameraOn && !voiceOn) {
+        document.getElementById("chart-container").scrollIntoView({ behavior: "smooth" });
+      }
+    }
+  </script>
+</body>
+</html>
